@@ -15,11 +15,12 @@ const { Server } = require('socket.io');
 // ---- Tunables (env overrides are for automated testing only) ----
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const QUESTIONS_PER_GAME = 12;
-const QUESTION_TIME_MS = parseInt(process.env.QUESTION_TIME_MS || '15000', 10);
 const REVEAL_TIME_MS = parseInt(process.env.REVEAL_TIME_MS || '5000', 10);
 const LEADERBOARD_TIME_MS = parseInt(process.env.LEADERBOARD_TIME_MS || '5000', 10);
 const DEFAULT_LOCKOUT_MS = 2000;
 const ALLOWED_LOCKOUT_MS = new Set([0, 1000, 2000, 3000]);
+const DEFAULT_QUESTION_TIME_MS = 15000;
+const ALLOWED_QUESTION_TIME_MS = new Set([10000, 15000, 20000, 30000]);
 const ROOM_EMPTY_TTL_MS = 5 * 60 * 1000;
 const MAX_NAME_LEN = 20;
 const MAX_ANSWER_LEN = 200;
@@ -245,7 +246,22 @@ function parseLockoutMs(value) {
   return DEFAULT_LOCKOUT_MS;
 }
 
-function createRoom(lockoutMs) {
+function parseQuestionTimeMs(value) {
+  const n = parseInt(value, 10);
+  if (ALLOWED_QUESTION_TIME_MS.has(n)) return n;
+  return DEFAULT_QUESTION_TIME_MS;
+}
+
+function roomQuestionTimeMs(room) {
+  const env = process.env.QUESTION_TIME_MS;
+  if (env != null && env !== '') {
+    const v = parseInt(env, 10);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return parseQuestionTimeMs(room && room.questionTimeMs);
+}
+
+function createRoom(lockoutMs, questionTimeMs) {
   let code = makeRoomCode();
   let guard = 0;
   while (rooms.has(code) && guard++ < 100) code = makeRoomCode();
@@ -253,6 +269,7 @@ function createRoom(lockoutMs) {
     code,
     phase: 'lobby', // lobby | question | reveal | leaderboard | final
     lockoutMs: parseLockoutMs(lockoutMs),
+    questionTimeMs: parseQuestionTimeMs(questionTimeMs),
     players: new Map(), // token -> player
     sockets: new Map(), // socketId -> token
     hostToken: null,
@@ -347,6 +364,7 @@ function lobbyState(room) {
     hostToken: room.hostToken,
     canStart: activePlayers(room).length >= 2,
     lockoutMs: room.lockoutMs,
+    questionTimeMs: room.questionTimeMs,
   };
 }
 
@@ -418,7 +436,8 @@ function nextQuestion(room) {
   room.phase = 'question';
   room.questionResults = new Map();
   room.questionStartTime = Date.now();
-  room.questionEndsAt = room.questionStartTime + QUESTION_TIME_MS;
+  const questionTimeMs = roomQuestionTimeMs(room);
+  room.questionEndsAt = room.questionStartTime + questionTimeMs;
   for (const p of room.players.values()) p.lockoutUntil = 0;
 
   io.to(room.code).emit('question', {
@@ -428,12 +447,13 @@ function nextQuestion(room) {
     prompt: q.prompt,
     endsAt: room.questionEndsAt,
     serverTime: Date.now(),
+    timeMs: questionTimeMs,
     lastQuestion: room.qIndex === room.questions.length - 1,
   });
   sendProgress(room);
 
   clearRoomTimer(room);
-  room.timer = setTimeout(() => endQuestion(room, false), QUESTION_TIME_MS);
+  room.timer = setTimeout(() => endQuestion(room, false), questionTimeMs);
 }
 
 function progressPayload(room) {
@@ -632,7 +652,7 @@ io.on('connection', (socket) => {
     try {
       const name = cleanStr(data && data.name, MAX_NAME_LEN);
       if (!name) return ack && ack({ ok: false, error: 'Enter a display name (1-20 chars).' });
-      const room = createRoom(data && data.lockoutMs);
+      const room = createRoom(data && data.lockoutMs, data && data.questionTimeMs);
       const token = makeToken();
       const player = {
         token, name, color: assignColor(room), score: 0, streak: 0,
@@ -645,7 +665,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       joinedRoom = room;
       cancelRoomCleanup(room);
-      ack && ack({ ok: true, room: room.code, token, lockoutMs: room.lockoutMs });
+      ack && ack({ ok: true, room: room.code, token, lockoutMs: room.lockoutMs, questionTimeMs: room.questionTimeMs });
       broadcastLobby(room);
     } catch (e) {
       ack && ack({ ok: false, error: 'Could not create room.' });
@@ -842,6 +862,7 @@ function sendCatchUp(room, player, socket) {
       prompt: q.prompt,
       endsAt: room.questionEndsAt,
       serverTime: Date.now(),
+      timeMs: roomQuestionTimeMs(room),
       lastQuestion: room.qIndex === room.questions.length - 1,
     });
     socket.emit('progress', progressPayload(room));

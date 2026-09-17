@@ -31,16 +31,19 @@ README.md
 
 ## Game flow (server.js is the source of truth)
 
-1. **Lobby** — `create-room {name, lockoutMs?}` / `join-room {room, name, token?}`.
-   `lockoutMs` is `0 | 1000 | 2000 | 3000` (default `2000`). Invalid values
-   fall back to 2000. Lobby payload includes `lockoutMs`.
+1. **Lobby** — `create-room {name, lockoutMs?, questionTimeMs?}` /
+   `join-room {room, name, token?}`.
+   `lockoutMs` is `0 | 1000 | 2000 | 3000` (default `2000`).
+   `questionTimeMs` is `10000 | 15000 | 20000 | 30000` (default `15000`).
+   Invalid values fall back to the defaults. Lobby payload includes both.
    Host sees room code, join URL (`<origin>/?room=ABCD`, copy button), live
    player list, kick buttons. Start unlocks at ≥ 2 **connected**
    non-spectator players.
 2. **Question ×12** — `question {index, total, type, prompt, endsAt,
-   serverTime, lastQuestion}`. 15 s countdown (`QUESTION_TIME_MS`).
-   Clients compute remaining time from `endsAt - Date.now()` (no clock-sync
-   assumption beyond the one-shot `serverTime` offset). Ends at 0 s or when
+   serverTime, timeMs, lastQuestion}`. Duration is `room.questionTimeMs`
+   (host-chosen at create; `QUESTION_TIME_MS` env still overrides for tests).
+   Clients use `offset = Date.now() - serverTime` and
+   `remain = endsAt - (Date.now() - offset)`. Ends at 0 s or when
    every active player has answered correctly.
 3. **Reveal** (5 s, `REVEAL_TIME_MS`) — correct answer + per-player points,
    fastest first.
@@ -121,7 +124,8 @@ README.md
 - Frontend uses only relative URLs (`io()`, `app.css`, `host.js`) so the app
   works behind tunnels/proxies. Never hardcode `localhost` in `public/`.
 - Test-only env overrides exist: `QUESTION_TIME_MS`, `REVEAL_TIME_MS`,
-  `LEADERBOARD_TIME_MS`. Defaults are 15000/5000/5000.
+  `LEADERBOARD_TIME_MS`. Room default question time is 15000 unless the host
+  picks otherwise. Reveal/leaderboard defaults 5000/5000.
 
 ## Testing
 

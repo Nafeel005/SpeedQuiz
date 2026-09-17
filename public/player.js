@@ -118,10 +118,10 @@
     startBtn.textContent = can ? 'Start game' : 'Start (need ≥ 2 players)';
     var note = document.getElementById('lockout-note');
     if (note) {
+      var qSec = (state.questionTimeMs || 15000) / 1000;
       var ms = state.lockoutMs;
-      note.textContent = !ms
-        ? 'Wrong-answer lockout: none (retry immediately)'
-        : 'Wrong-answer lockout: ' + (ms / 1000) + 's';
+      var lock = !ms ? 'none (retry immediately)' : (ms / 1000) + 's';
+      note.textContent = 'Question time: ' + qSec + 's. Wrong-answer lockout: ' + lock + '.';
     }
   }
 
@@ -139,9 +139,10 @@
       if (cd) cd.textContent = '';
       return;
     }
+    var offset = Date.now() - serverTime;
     var total = endsAt - serverTime;
     function tick() {
-      var remain = Math.max(0, endsAt - Date.now());
+      var remain = Math.max(0, endsAt - (Date.now() - offset));
       var frac = total > 0 ? remain / total : 0;
       fill.style.width = (frac * 100).toFixed(1) + '%';
       fill.classList.toggle('low', remain < 2000);
@@ -248,9 +249,10 @@
     clearInterval(timerInt);
     var fill = document.getElementById('timer-fill');
     var cd = document.getElementById('q-countdown');
-    var total = q.endsAt - q.serverTime;
+    var offset = Date.now() - q.serverTime;
+    var total = q.timeMs || (q.endsAt - q.serverTime);
     function tick() {
-      var remain = Math.max(0, q.endsAt - Date.now());
+      var remain = Math.max(0, q.endsAt - (Date.now() - offset));
       var frac = total > 0 ? remain / total : 0;
       fill.style.width = (frac * 100).toFixed(1) + '%';
       fill.classList.toggle('low', remain < 5000);
