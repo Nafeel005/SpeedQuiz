@@ -114,6 +114,13 @@
     var can = count >= 2;
     startBtn.disabled = !can;
     startBtn.textContent = can ? 'Start game' : 'Start (need ≥ 2 players)';
+    var note = document.getElementById('lockout-note');
+    if (note) {
+      var ms = state.lockoutMs;
+      note.textContent = !ms
+        ? 'Wrong-answer lockout: none (retry immediately)'
+        : 'Wrong-answer lockout: ' + (ms / 1000) + 's';
+    }
   }
 
   // ---------- question ----------
@@ -279,13 +286,7 @@
         answerMsg.hidden = false;
         answerInput.disabled = true;
       } else if (res.reason === 'wrong' || res.reason === 'locked') {
-        var s = Math.ceil((res.retryInMs || 2000) / 1000);
-        answerMsg.textContent = '✗ Wrong — try again in ' + s + 's';
-        answerMsg.className = 'answer-msg bad';
-        answerMsg.hidden = false;
-        answerInput.classList.remove('shake');
-        void answerInput.offsetWidth;
-        answerInput.classList.add('shake');
+        showWrong(res.retryInMs);
       }
     });
   });
@@ -298,15 +299,21 @@
       answerMsg.hidden = false;
       answerInput.disabled = true;
     } else {
-      var s = Math.ceil((r.retryInMs || 2000) / 1000);
-      answerMsg.textContent = '✗ Wrong — try again in ' + s + 's';
-      answerMsg.className = 'answer-msg bad';
-      answerMsg.hidden = false;
-      answerInput.classList.remove('shake');
-      void answerInput.offsetWidth;
-      answerInput.classList.add('shake');
+      showWrong(r.retryInMs);
     }
   });
+
+  function showWrong(retryInMs) {
+    var ms = retryInMs || 0;
+    answerMsg.textContent = ms > 0
+      ? '✗ Wrong — try again in ' + Math.ceil(ms / 1000) + 's'
+      : '✗ Wrong — try again!';
+    answerMsg.className = 'answer-msg bad';
+    answerMsg.hidden = false;
+    answerInput.classList.remove('shake');
+    void answerInput.offsetWidth;
+    answerInput.classList.add('shake');
+  }
 
   document.getElementById('skip-btn').addEventListener('click', function () {
     socket.emit('skip-question', {}, function () {});

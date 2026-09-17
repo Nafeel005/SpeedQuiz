@@ -116,6 +116,13 @@
     var can = count >= 2;
     startBtn.disabled = !can;
     startBtn.textContent = can ? 'Start game' : 'Start (need ≥ 2 players)';
+    var note = document.getElementById('lockout-note');
+    if (note) {
+      var ms = state.lockoutMs;
+      note.textContent = !ms
+        ? 'Wrong-answer lockout: none (retry immediately)'
+        : 'Wrong-answer lockout: ' + (ms / 1000) + 's';
+    }
   }
 
   // ---------- question ----------
@@ -299,8 +306,10 @@
   });
 
   function showWrong(retryInMs) {
-    var s = Math.ceil((retryInMs || 2000) / 1000);
-    answerMsg.textContent = '✗ Wrong — try again in ' + s + 's';
+    var ms = retryInMs || 0;
+    answerMsg.textContent = ms > 0
+      ? '✗ Wrong — try again in ' + Math.ceil(ms / 1000) + 's'
+      : '✗ Wrong — try again!';
     answerMsg.className = 'answer-msg bad';
     answerMsg.hidden = false;
     answerInput.classList.remove('shake');

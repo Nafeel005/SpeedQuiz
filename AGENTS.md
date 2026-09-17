@@ -31,7 +31,9 @@ README.md
 
 ## Game flow (server.js is the source of truth)
 
-1. **Lobby** — `create-room {name}` / `join-room {room, name, token?}`.
+1. **Lobby** — `create-room {name, lockoutMs?}` / `join-room {room, name, token?}`.
+   `lockoutMs` is `0 | 1000 | 2000 | 3000` (default `2000`). Invalid values
+   fall back to 2000. Lobby payload includes `lockoutMs`.
    Host sees room code, join URL (`<origin>/?room=ABCD`, copy button), live
    player list, kick buttons. Start unlocks at ≥ 2 **connected**
    non-spectator players.
@@ -54,7 +56,9 @@ README.md
   Only the first correct answer per player per question counts.
 - Streak bonus: `+100 * (streakAfter - 1)` (2nd consecutive correct +100,
   3rd +200…). Any wrong answer or unanswered question resets streak to 0.
-- Wrong answer → 2 s lockout (`LOCKOUT_MS`), then unlimited retries.
+- Wrong answer → optional lockout (`room.lockoutMs`, default 2000), then
+  unlimited retries. `0` means retry immediately. 5 answers/sec rate limit
+  always applies.
 - Last question worth double (base + bonus, then ×2).
 
 ## Answer matching (`isCorrect()`, exported for tests)

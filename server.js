@@ -18,7 +18,8 @@ const QUESTIONS_PER_GAME = 12;
 const QUESTION_TIME_MS = parseInt(process.env.QUESTION_TIME_MS || '15000', 10);
 const REVEAL_TIME_MS = parseInt(process.env.REVEAL_TIME_MS || '5000', 10);
 const LEADERBOARD_TIME_MS = parseInt(process.env.LEADERBOARD_TIME_MS || '5000', 10);
-const LOCKOUT_MS = 2000;
+const DEFAULT_LOCKOUT_MS = 2000;
+const ALLOWED_LOCKOUT_MS = new Set([0, 1000, 2000, 3000]);
 const ROOM_EMPTY_TTL_MS = 5 * 60 * 1000;
 const MAX_NAME_LEN = 20;
 const MAX_ANSWER_LEN = 200;
@@ -238,13 +239,20 @@ function selectQuestions() {
 /** rooms: code -> room */
 const rooms = new Map();
 
-function createRoom() {
+function parseLockoutMs(value) {
+  const n = parseInt(value, 10);
+  if (ALLOWED_LOCKOUT_MS.has(n)) return n;
+  return DEFAULT_LOCKOUT_MS;
+}
+
+function createRoom(lockoutMs) {
   let code = makeRoomCode();
   let guard = 0;
   while (rooms.has(code) && guard++ < 100) code = makeRoomCode();
   const room = {
     code,
     phase: 'lobby', // lobby | question | reveal | leaderboard | final
+    lockoutMs: parseLockoutMs(lockoutMs),
     players: new Map(), // token -> player
     sockets: new Map(), // socketId -> token
     hostToken: null,
@@ -338,6 +346,7 @@ function lobbyState(room) {
     })),
     hostToken: room.hostToken,
     canStart: activePlayers(room).length >= 2,
+    lockoutMs: room.lockoutMs,
   };
 }
 
@@ -462,8 +471,9 @@ function handleAnswer(room, player, rawAnswer) {
     return { ok: false, reason: 'rate-limited' };
   }
   player.answerTimes.push(now);
-  // Lockout after wrong answer
-  if (player.lockoutUntil && now < player.lockoutUntil) {
+  const lockoutMs = parseLockoutMs(room.lockoutMs);
+  // Lockout after wrong answer (0 = retry immediately)
+  if (lockoutMs > 0 && player.lockoutUntil && now < player.lockoutUntil) {
     return { ok: false, reason: 'locked', retryInMs: player.lockoutUntil - now };
   }
   // Already correct — only first correct counts
@@ -491,11 +501,10 @@ function handleAnswer(room, player, rawAnswer) {
     }
     return { ok: true, correct: true, points, elapsed };
   }
-  // Wrong: lock out 2s, may retry. Streak resets only at question end? Spec: resets on a wrong/no answer.
-  // Reset streak immediately on a wrong answer (subsequent correct in same question still counts as new streak start).
+  // Wrong: optional lockout, then retry. Streak resets immediately.
   player.streak = 0;
-  player.lockoutUntil = now + LOCKOUT_MS;
-  return { ok: false, correct: false, reason: 'wrong', retryInMs: LOCKOUT_MS };
+  if (lockoutMs > 0) player.lockoutUntil = now + lockoutMs;
+  return { ok: false, correct: false, reason: 'wrong', retryInMs: lockoutMs };
 }
 
 function endQuestion(room, early) {
@@ -623,7 +632,7 @@ io.on('connection', (socket) => {
     try {
       const name = cleanStr(data && data.name, MAX_NAME_LEN);
       if (!name) return ack && ack({ ok: false, error: 'Enter a display name (1-20 chars).' });
-      const room = createRoom();
+      const room = createRoom(data && data.lockoutMs);
       const token = makeToken();
       const player = {
         token, name, color: assignColor(room), score: 0, streak: 0,
@@ -636,7 +645,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       joinedRoom = room;
       cancelRoomCleanup(room);
-      ack && ack({ ok: true, room: room.code, token });
+      ack && ack({ ok: true, room: room.code, token, lockoutMs: room.lockoutMs });
       broadcastLobby(room);
     } catch (e) {
       ack && ack({ ok: false, error: 'Could not create room.' });

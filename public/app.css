@@ -72,6 +72,16 @@ input {
   color: var(--text);
 }
 input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+select {
+  width: 100%;
+  font-size: 1.15rem;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+}
+select:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
 .room-input { text-transform: uppercase; font-weight: 700; letter-spacing: 0.3em; text-align: center; }
 .btn {
   font-size: 1.1rem;
